@@ -2,7 +2,9 @@ import customtkinter as ctk
 import threading
 import socket
 import queue
-import queue
+from tkinter import filedialog, messagebox
+import json
+
 class ServerWindow(ctk.CTkToplevel):
 
     def __init__(self, parent, session_name, clients=None, initial_scores = None):
@@ -19,6 +21,9 @@ class ServerWindow(ctk.CTkToplevel):
         self.clients_lock = threading.Lock()
         self.clients_listen = set()
         self.message_queuw = queue.Queue
+        self.questions = []
+        self.question_index = -1
+        self.questions_file = None
         self.geometry("360x540")
         self.title(f"{session_name}-kahoot Server")
         
@@ -132,14 +137,112 @@ class ServerWindow(ctk.CTkToplevel):
                     except:
                         pass
 
+        def load_question(q):
+            """loading questions and answers from json file"""
+            entry1.delete(0,"end")
+            entry1.insert(0,q.get("question",""))
+
+            answers = q.get("answers",["","","",""])
+            answer1.delete(0,"end")
+            answer1.insert(0,answers[0] if len(answers)>0 else "")
+            answer2.delete(0,"end")
+            answer2.insert(0,answers[1] if len(answers)>1 else "")
+            answer3.delete(0,"end")
+            answer3.insert(0,answers[2] if len(answers)>2 else "")
+            answer4.delete(0,"end")
+            answer4.insert(0,answers[3] if len(answers)>3 else "")
+
+            cb1.deselect()
+            cb2.deselect()
+            cb3.deselect()
+            cb4.deselect()
+            correct = q.get("correct", 1)
+            if correct ==1:
+                cb1.select()
+            elif correct == 2:
+                cb2.select()
+            elif correct ==3:
+                cb3.select()
+            elif correct ==4:
+                cb4.select()
+
+        def load_questions_from_file():
+            path = filedialog.askopenfilename(
+                title="Load Questions",
+                filetypes=[("JSON files", "*.json"), ("All files", "*.*")]
+            )
+            if not path:
+                return
+            try:
+                with open(path,"r",encoding="utf-8") as f:
+                    raw = json.load(f)
+            except Exception as e:
+                messagebox.showerror("Load Failed",f"Could not read file\n{e}")
+                return
+            
+            if isinstance(raw, dict) and "questions" in raw:
+                raw = raw.get("questions")
+
+            if not isinstance(raw,list):
+                messagebox.showerror("Invalid File", "Expected a list of questions.")
+                return
+            
+            cleaned = []
+
+            for item in raw:
+                if not isinstance(item, dict):
+                    continue
+
+                question = str(item.get("question", "")).strip()
+                answers = item.get("answers",[])
+                if not question or not isinstance(answers, list)  or len(answers)<4:
+                    continue
+                answers = [str(a) for a in answers[:4]]
+                correct = item.get("correct",1)
+                try:
+                    correct = int(correct)
+                except Exception:
+                    correct = 1
+                if correct in (1,2,3,4):
+                    pass
+                elif correct in (0,1,2,3):
+                    correct +=1
+                else:
+                    correct = 1
+
+                cleaned.append({"question":question,"answers":answers,"correct":correct})
+            if not cleaned:
+                messagebox.showinfo("No Questions", "No valid questions found in files.")
+                return
+            
+            self.questions = cleaned
+            self.question_index =0
+            self.questions_file = path
+            load_question(self.questions[self.question_index])
+
+        def goto_question(delta):
+            if not self.questions:
+                messagebox.showinfo("No questions", "Load a question file first.")
+                return
+            
+            next_index = self.question_index + delta
+            if next_index < 0 or next_index >= len(self.questions):
+                return
+            self.question_index = next_index
+            load_question(self.questions[self.question_index])
+
         middle_row = ctk.CTkFrame(master=frame, fg_color="transparent")
         middle_row.pack(pady=0, padx=0, fill="x")
 
-        button_prev = ctk.CTkButton(master=middle_row, text="Previous")
-        button_prev.pack(side="left", padx=10)
+        button_prev = ctk.CTkButton(master=middle_row, text="Previous", width=107,command=lambda:goto_question(-1))
+        button_prev.pack(side="left", expand=True, fill="x", padx=4)
 
-        button_next = ctk.CTkButton(master=middle_row, text="Next")
-        button_next.pack(side="right", padx=10)
+        button_load = ctk.CTkButton(master=middle_row, text="Load", width=110,command=load_questions_from_file)
+        button_load.pack(side="left", expand=True, fill="x", padx=4)
+
+
+        button_next = ctk.CTkButton(master=middle_row, text="Next", width=110,command=lambda:goto_question(1))
+        button_next.pack(side="left", expand=True, fill="x", padx=4)
 
         bottom_row = ctk.CTkFrame(master=frame, fg_color="transparent")
         bottom_row.pack(pady=(10, 0), padx=0, fill="x")
@@ -213,12 +316,94 @@ class ServerWindow(ctk.CTkToplevel):
         bottom_row_questions = ctk.CTkFrame(master=frame_questions, fg_color="transparent")
         bottom_row_questions.pack(pady=(4, 10), padx=0, fill="x")
 
-        button3_questions = ctk.CTkButton(master=bottom_row_questions, text="Add Question", height=32)
+        def save_questions_to_file(path):
+            try:
+                with open(path, "w", encoding="utf-8") as f:
+                    json.dump(self.questions, f, ensure_ascii=False, indent=2)
+            except Exception as e:
+                messagebox.showerror("Save Failed", f"Could not save file:\n{e}")
+                return False
+            return True
+
+        def choose_questions_file():
+            path = filedialog.asksaveasfilename(
+                title="Save Questions",
+                defaultextension=".json",
+                filetypes=[("JSON files", "*.json"), ("All files", "*.*")]
+            )
+            if not path:
+                return None
+            return path
+
+        def add_question():
+            question = entry2.get().strip()
+            a1 = answer1_questions.get().strip()
+            a2 = answer2_questions.get().strip()
+            a3 = answer3_questions.get().strip()
+            a4 = answer4_questions.get().strip()
+
+            correct = None
+            if cb1_questions.get():
+                correct = 1
+            elif cb2_questions.get():
+                correct = 2
+            elif cb3_questions.get():
+                correct = 3
+            elif cb4_questions.get():
+                correct = 4
+
+            if not question:
+                messagebox.showinfo("Missing Data", "Question is required.")
+                return
+            if not all([a1, a2, a3, a4]):
+                messagebox.showinfo("Missing Data", "All four answers are required.")
+                return
+            if correct is None:
+                messagebox.showinfo("Missing Data", "Select the correct answer.")
+                return
+
+            q = {"question": question, "answers": [a1, a2, a3, a4], "correct": correct}
+            self.questions.append(q)
+
+            if self.question_index == -1:
+                self.question_index = 0
+
+            if not self.questions_file:
+                self.questions_file = choose_questions_file()
+                if not self.questions_file:
+                    return
+            if not save_questions_to_file(self.questions_file):
+                return
+
+            entry2.delete(0, "end")
+            answer1_questions.delete(0, "end")
+            answer2_questions.delete(0, "end")
+            answer3_questions.delete(0, "end")
+            answer4_questions.delete(0, "end")
+            cb1_questions.deselect()
+            cb2_questions.deselect()
+            cb3_questions.deselect()
+            cb4_questions.deselect()
+            messagebox.showinfo("Saved", f"Question added to {self.questions_file}")
+
+        button3_questions = ctk.CTkButton(master=bottom_row_questions, text="Add Question", height=32, command=add_question)
         button3_questions.pack(pady=10, padx=10)
 
         # Start listening for answers from each client
         self.start_listening_for_answers()
         self.update_leaderboard_ui()
+
+    def _recv_exact(self, sock, nbytes):
+        data = b""
+        while len(data) < nbytes:
+            try:
+                chunk = sock.recv(nbytes - len(data))
+            except socket.timeout:
+                return b""
+            if not chunk:
+                return None
+            data += chunk
+        return data
 
     def set_inittial_scores(self, scores):
         with self.clients_lock: 
@@ -246,12 +431,25 @@ class ServerWindow(ctk.CTkToplevel):
         """Listen for answers and names from a specific client"""
         try:
             while True:
-                msg_length = client_sock.recv(self.HEADER).decode(self.FORMAT).strip()
-                if not msg_length:
+                raw_length = self._recv_exact(client_sock, self.HEADER)
+                if raw_length is None:
+                    break
+                if raw_length == b"":
+                    continue
+                msg_length_txt = raw_length.decode(self.FORMAT).strip()
+                if not msg_length_txt:
+                    continue
+                if not msg_length_txt.isdigit():
+                    print(f"[WARN] Invalid header from {addr}: {msg_length_txt!r}")
                     continue
 
-                msg_length = int(msg_length)
-                msg = client_sock.recv(msg_length).decode(self.FORMAT)
+                msg_length = int(msg_length_txt)
+                msg_raw = self._recv_exact(client_sock, msg_length)
+                if msg_raw is None:
+                    break
+                if msg_raw == b"":
+                    continue
+                msg = msg_raw.decode(self.FORMAT)
 
                 if not msg:
                     continue
@@ -273,6 +471,8 @@ class ServerWindow(ctk.CTkToplevel):
                     if name and score_txt.isdigit():
                         with self.clients_lock:
                             self.scores[name] = int(score_txt)
+                            # Keep socket -> name mapping for future answers
+                            self.client_names[client_sock] = name
                         self.after(0, self.update_leaderboard_ui)
 
                 # Grade answer
@@ -283,6 +483,8 @@ class ServerWindow(ctk.CTkToplevel):
                     
                     if correct and msg == correct:
                         with self.clients_lock:
+                            if name not in self.scores:
+                                self.scores[name] = 0
                             self.scores[name] += 1
                         print(f"[CORRECT] {name} +1 (total: {self.scores[name]})")
                         self.after(0,self.update_leaderboard_ui)
@@ -295,15 +497,25 @@ class ServerWindow(ctk.CTkToplevel):
             with self.clients_lock:
                 if client_sock in self.client_names:
                     del self.client_names[client_sock]
-                if client_sock in self.clients_listen.remove(client_sock):
+                if client_sock in self.clients_listen:
                     self.clients_listen.remove(client_sock)
             try:
                 client_sock.close()
             except:
                 pass
 
-    def send_leaderboard():
-        
+    def send_leaderboard(self,client_sock):
+        entry = self.leaderboard_textbox.get()  
+        for client_sock in list(self.clients):
+            try:
+                payload = entry.encode(self.FORMAT)
+                send_length = str(len(payload)).encode(self.FORMAT)
+                send_length +=b' ' * (self.HEADER-len(send_length))
+                client_sock.send(send_length)
+                client_sock.send(payload)
+            except Exception as e:
+                print(f"[WARNING] leaderboard could not updated :{e}")
+            
 
     def start_listening_for_answers(self):
         """Start a thread for each connected client to listen for answers"""

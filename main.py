@@ -51,6 +51,11 @@ def handle_client(conn, addr):
     print(clients)
     print(f"[NEW CONNECTION] {addr} connected.")
     connected=True
+    # Use a short timeout so the loop can notice session start and handoff
+    try:
+        conn.settimeout(0.5)
+    except Exception:
+        pass
     handoff_to_session = False
     while connected:
         if session_active:
@@ -161,6 +166,13 @@ def open_server():
     session_name=session_name_var.get()
     print(session_name)
     session_active = True
+    with clients_lock:
+        # Clear timeouts for active session listeners
+        for c in list(clients):
+            try:
+                c.settimeout(None)
+            except Exception:
+                pass
     root.withdraw()
     session_window = ServerWindow(root,session_name,clients=clients,initial_scores=scores)
 
@@ -176,6 +188,5 @@ participants_textbox.pack(pady=(0,10),padx=10,fill="both",expand=True)
 pump_messages()
 
 root.mainloop()
-
 
 

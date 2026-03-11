@@ -273,9 +273,10 @@ def show_join_dialog(on_join):
 
 
 def on_join(name):
-    global score
+    global score, player_name
     print("Joined as:",name)
     score=0
+    player_name = name
     
     root.title(f"{name}-Quiz App")
 
