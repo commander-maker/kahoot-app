@@ -123,6 +123,12 @@ class ServerWindow(ctk.CTkToplevel):
             fields = [question, a1, a2, a3, a4, correct_answer]
             for client_sock in list(self.clients):
                 try:
+                    # Send message type first so clients can multiplex
+                    payload = "QUESTION".encode(self.FORMAT)
+                    send_length = str(len(payload)).encode(self.FORMAT)
+                    send_length += b' ' * (HEADER - len(send_length))
+                    client_sock.send(send_length)
+                    client_sock.send(payload)
                     for field in fields:
                         payload = field.encode(self.FORMAT)
                         send_length = str(len(payload)).encode(self.FORMAT)
@@ -478,9 +484,13 @@ class ServerWindow(ctk.CTkToplevel):
                 # Grade answer
                 elif msg.isdigit():
                     with self.clients_lock:
-                        name = self.client_names.get(client_sock, str(addr))
+                        name = self.client_names.get(client_sock)
                         correct = self.current_correct
-                    
+
+                    if not name:
+                        print(f"[WARN] Answer received before join/name from {addr}")
+                        continue
+
                     if correct and msg == correct:
                         with self.clients_lock:
                             if name not in self.scores:
@@ -505,9 +515,14 @@ class ServerWindow(ctk.CTkToplevel):
                 pass
 
     def send_leaderboard(self,client_sock):
-        entry = self.leaderboard_textbox.get()  
+        entry = self.leaderboard_textbox.get("1.0", "end")  
         for client_sock in list(self.clients):
             try:
+                header = "LEADERBOARD".encode(self.FORMAT)
+                header_len = str(len(header)).encode(self.FORMAT)
+                header_len += b' ' * (self.HEADER - len(header_len))
+                client_sock.send(header_len)
+                client_sock.send(header)
                 payload = entry.encode(self.FORMAT)
                 send_length = str(len(payload)).encode(self.FORMAT)
                 send_length +=b' ' * (self.HEADER-len(send_length))
@@ -520,7 +535,11 @@ class ServerWindow(ctk.CTkToplevel):
     def start_listening_for_answers(self):
         """Start a thread for each connected client to listen for answers"""
         for client_sock in list(self.clients):
-            self._start_listening_for_client(client_sock, "unknown")
+            try:
+                addr = client_sock.getpeername()
+            except Exception:
+                addr = "unknown"
+            self._start_listening_for_client(client_sock, addr)
 
     def update_leaderboard_ui(self):
         with self.clients_lock:
@@ -534,6 +553,8 @@ class ServerWindow(ctk.CTkToplevel):
             for i, (name, score) in enumerate(items, start=1):
                 self.leaderboard_textbox.insert("end", f"{i}. {name} - {score}\n")
         self.leaderboard_textbox.configure(state="disabled")
+        # Push leaderboard to clients after UI updates
+        self.send_leaderboard(None)
 
     def go_back(self):
         self.destroy()

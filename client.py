@@ -58,6 +58,14 @@ def recv_exact(sock, nbytes):
         data += chunk
     return data
 
+def update_leaderboard(text):
+    def _apply():
+        leaderboard_textbox.configure(state="normal")
+        leaderboard_textbox.delete("1.0","end")
+        leaderboard_textbox.insert("end", text if text else "No players yet.\n")
+        leaderboard_textbox.configure(state="disabled")
+    root.after(0, _apply)
+
 def recieve_question(callback):
     """Continuously listen for question and 4 answers from server"""
     print("[DEBUG] recieve thread started")
@@ -68,11 +76,42 @@ def recieve_question(callback):
                 print("[INFO] Server closed the connection.")
                 break
             msg_length = int(raw_length.decode(FORMAT).strip())
-            question_raw = recv_exact(client, msg_length)
-            if not question_raw:
+            msg_raw = recv_exact(client, msg_length)
+            if not msg_raw:
                 print("[INFO] Server closed the connection.")
                 break
-            question = question_raw.decode(FORMAT)
+            msg_type = msg_raw.decode(FORMAT)
+
+            if msg_type =="LEADERBOARD":
+                lb_len_raw = recv_exact(client, HEADER)
+                if not lb_len_raw:
+                    print("[INFO] Sever closed the connection.")
+                    break
+                lb_len = int(lb_len_raw.decode(FORMAT).strip())
+                lb_raw = recv_exact(client, lb_len)
+                if not lb_raw:
+                    print("[INFO] Server closer the Connection")
+                    break
+                leaderboard_text=lb_raw.decode(FORMAT)
+                update_leaderboard(leaderboard_text)
+                continue
+            
+            if msg_type != "QUESTION":
+                print(f"[WARN] Unknown message type: {msg_type!r}")
+                continue
+
+            q_len_raw = recv_exact(client,HEADER)
+            if not q_len_raw:
+                print("[INFO] Server closed the connection.")
+                break
+
+            q_len = int(q_len_raw.decode(FORMAT).strip())
+            q_raw = recv_exact(client, q_len)
+            if not q_raw:
+                print("[INFO] Server closed the connection.")
+                break
+
+            question = q_raw.decode(FORMAT)
 
             answers = []
             for _ in range(4):
@@ -98,6 +137,8 @@ def recieve_question(callback):
                 print("[INFO] Server closed the connection.")
                 break
             correct_answer = correct_raw.decode(FORMAT)
+
+
 
             print(f"[RECIEVED] question={question}, answers={answers}, correct={correct_answer}")
             callback(question, answers,correct_answer)
@@ -282,8 +323,6 @@ def on_join(name):
 
 show_join_dialog(on_join)
 
-
-
 tabs=ctk.CTkTabview(master=root)
 tabs.pack(fill="both",expand=True,padx=0,pady=0)
 
@@ -370,7 +409,6 @@ cb3.pack(side="left", padx=(0, 3))
 cb4 = ctk.CTkCheckBox(master=checks_row, text="4",  width=60, checkbox_width=24, checkbox_height=24)
 cb4.pack(side="left")
 
-
 bottom_row= ctk.CTkFrame(master=frame, fg_color="transparent")
 bottom_row.pack(pady=(10,0), padx=0, fill="x")
 
@@ -387,6 +425,9 @@ top_row_leaderboard.pack(pady=(4, 10), padx=0, fill="x")
 label5=ctk.CTkLabel(master=top_row_leaderboard,text="Leaderboard",font=("Roboto",24))
 label5.pack(pady=12,padx=10,side="left")
 
+leaderboard_textbox = ctk.CTkTextbox(master=frame_leaderboard, height=300)
+leaderboard_textbox.pack(pady=10, padx=10, fill="both", expand=True)
+leaderboard_textbox.configure(state="disabled")
 
 players=[
     {"name":"Alex Johnson", "score":12450},

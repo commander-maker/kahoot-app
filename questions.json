@@ -1,32 +1,22 @@
 [
   {
-    "question": "dsfss",
+    "question": "What is the capital of Japan",
     "answers": [
-      "sdsfs",
-      "dsfsf",
-      "ddfsfd",
-      "sdss"
+      "Tokyo",
+      "Osaka",
+      "Toyota",
+      "Okinawa"
     ],
     "correct": 1
   },
   {
-    "question": "sdsds",
+    "question": "What is the capital of  India?",
     "answers": [
-      "sds",
-      "sdsfdsfd",
-      "dssd",
-      "dsfsf"
+      "Delhi",
+      "Mumbai",
+      "Chennai",
+      "Lucknow"
     ],
-    "correct": 2
-  },
-  {
-    "question": "sdsdsfd",
-    "answers": [
-      "xcxc",
-      "cxcx",
-      "xcxzcxc",
-      "xzczxcd"
-    ],
-    "correct": 3
+    "correct": 1
   }
 ]
