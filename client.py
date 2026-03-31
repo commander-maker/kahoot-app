@@ -307,7 +307,7 @@ def leave_session():
 def show_join_dialog(on_join):
     dialog = ctk.CTkToplevel(root)
     dialog.title("Join Session")
-    dialog.geometry("300x180")
+    dialog.geometry("300x240")
     dialog.resizable(False, False)
     dialog.transient(root)
     dialog.grab_set()
@@ -318,7 +318,7 @@ def show_join_dialog(on_join):
     ctk.CTkLabel(container, text="Enter your name", font=("Roboto", 16)).pack(anchor="w")
 
     name_entry = ctk.CTkEntry(container, placeholder_text="Name")
-    name_entry.pack(fill="x", pady=(8, 12))
+    name_entry.pack(fill="x", pady=(0, 0))
     name_entry.focus_set()
 
     error_label = ctk.CTkLabel(container, text="", text_color="red")
@@ -326,7 +326,7 @@ def show_join_dialog(on_join):
 
     ctk.CTkLabel(container, text="Session Password", font=("Roboto", 14)).pack(anchor="w", pady=(8, 0))
     pass_entry = ctk.CTkEntry(container, placeholder_text="Password", show="*")
-    pass_entry.pack(fill="x", pady=(4, 12))
+    pass_entry.pack(fill="x", pady=(0, 0))
 
     def submit():
         name = name_entry.get().strip()
