@@ -9,6 +9,7 @@ FORMAT = 'utf-8'
 DISCONNECT_MESSAGE = "DISCONNECTED"
 SERVER = socket.gethostbyname(socket.gethostname())
 ADDR = (SERVER, PORT)
+DISCOVERY_PORT = 5051
 score = 0
 msg_queue = queue.Queue()
 client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -19,15 +20,57 @@ player_name = None
 # Don't connect here - defer until needed
 # client.connect(ADDR)
 
-def connect_to_server(name):
+def discover_server(timeout=3.0):
+    """Broadcast on LAN to find the server. Returns (ip, port) or None."""
+    udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    udp.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+    udp.settimeout(timeout)
+    try:
+        udp.sendto(b"DISCOVER", ("255.255.255.255", DISCOVERY_PORT))
+        data, _addr = udp.recvfrom(1024)
+        msg = data.decode(FORMAT)
+        if msg.startswith("SERVER:"):
+            _, ip, port = msg.split(":", 2)
+            return (ip, int(port))
+    except Exception:
+        return None
+    finally:
+        udp.close()
+    return None
+
+def connect_to_server(name, password):
     """Call this when you need to connect to the server"""
     global is_connected
     if is_connected:
         return True
     try:
-        client.connect(ADDR)
+        found = discover_server()
+        if not found:
+            print("[ERROR] Could not discover server on LAN.")
+            return False
+        addr = found
+        client.connect(addr)
+        # Send password first
+        send(f"PASS:{password}")
+        raw_length = recv_exact(client, HEADER)
+        if not raw_length:
+            print("[ERROR] No auth response from server.")
+            return False
+        msg_length = int(raw_length.decode(FORMAT).strip())
+        msg_raw = recv_exact(client, msg_length)
+        if not msg_raw:
+            print("[ERROR] No auth response from server.")
+            return False
+        auth_msg = msg_raw.decode(FORMAT)
+        if auth_msg != "AUTH_OK":
+            print("[ERROR] Password rejected by server.")
+            try:
+                client.close()
+            except Exception:
+                pass
+            return False
         is_connected = True
-        print(f"[{name}] Connected to server at {ADDR}")
+        print(f"[{name}] Connected to server at {addr}")
         return True
     except ConnectionRefusedError:
         print(f"[ERROR] Could not connect to server at {ADDR}")
@@ -281,13 +324,21 @@ def show_join_dialog(on_join):
     error_label = ctk.CTkLabel(container, text="", text_color="red")
     error_label.pack(anchor="w")
 
+    ctk.CTkLabel(container, text="Session Password", font=("Roboto", 14)).pack(anchor="w", pady=(8, 0))
+    pass_entry = ctk.CTkEntry(container, placeholder_text="Password", show="*")
+    pass_entry.pack(fill="x", pady=(4, 12))
+
     def submit():
         name = name_entry.get().strip()
         if not name:
             error_label.configure(text="Name is required.")
             return
-        if not connect_to_server(name):
-            error_label.configure(text="Cannot connect to server.")
+        password = pass_entry.get().strip()
+        if not password:
+            error_label.configure(text="Password is required.")
+            return
+        if not connect_to_server(name, password):
+            error_label.configure(text="Cannot connect to server. Check password or server.")
             return
         dialog.destroy()
         send(f"{name} has joined the server")

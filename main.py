@@ -10,6 +10,8 @@ customtkinter.set_default_color_theme("dark-blue")
 
 HEADER = 64
 PORT = 5050
+DISCOVERY_PORT = 5051
+SERVER_PASSWORD = "1234"
 SERVER = socket.gethostbyname(socket.gethostname())
 ADDR = (SERVER, PORT)
 FORMAT = 'utf-8'
@@ -45,6 +47,54 @@ def recv_exact(sock, nbytes):
             return None
         data += chunk
     return data
+
+def send_framed(sock, text):
+    payload = text.encode(FORMAT)
+    send_length = str(len(payload)).encode(FORMAT)
+    send_length += b' ' * (HEADER - len(send_length))
+    sock.sendall(send_length)
+    sock.sendall(payload)
+
+def authenticate_client(conn, addr):
+    """Expect PASS:<password> as the first message."""
+    try:
+        conn.settimeout(5)
+        raw_length = recv_exact(conn, HEADER)
+        if raw_length is None or raw_length == b"":
+            return False
+        msg_length_txt = raw_length.decode(FORMAT).strip()
+        if not msg_length_txt.isdigit():
+            return False
+        msg_length = int(msg_length_txt)
+        msg_raw = recv_exact(conn, msg_length)
+        if msg_raw is None or msg_raw == b"":
+            return False
+        msg = msg_raw.decode(FORMAT)
+        if msg.startswith("PASS:") and msg.split("PASS:", 1)[1] == SERVER_PASSWORD:
+            send_framed(conn, "AUTH_OK")
+            return True
+        send_framed(conn, "AUTH_FAIL")
+        return False
+    except Exception:
+        try:
+            send_framed(conn, "AUTH_FAIL")
+        except Exception:
+            pass
+        return False
+
+def discovery_server():
+    """UDP discovery responder for LAN auto-join."""
+    udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    udp.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    udp.bind(("", DISCOVERY_PORT))
+    while True:
+        try:
+            data, addr = udp.recvfrom(1024)
+            if data.decode(FORMAT).strip() == "DISCOVER":
+                reply = f"SERVER:{SERVER}:{PORT}"
+                udp.sendto(reply.encode(FORMAT), addr)
+        except Exception:
+            continue
 
 def handle_client(conn, addr):
     global session_active
@@ -118,7 +168,14 @@ def start():
     print(f"[LISTENING] Server is listening on {server}")
     while True:
         conn,addr=server.accept()
-        
+        if not authenticate_client(conn, addr):
+            print(f"[AUTH] Rejected connection from {addr}")
+            try:
+                conn.close()
+            except Exception:
+                pass
+            continue
+
         with clients_lock:
             clients.append(conn)
             active_window = session_window
@@ -137,6 +194,8 @@ print("[STARTING] server is starting...")
 
 # Start server in background thread
 import time
+discovery_thread = threading.Thread(target=discovery_server, daemon=True)
+discovery_thread.start()
 server_thread = threading.Thread(target=start, daemon=True)
 server_thread.start()
 time.sleep(1)  # Give server time to start listening
@@ -188,5 +247,3 @@ participants_textbox.pack(pady=(0,10),padx=10,fill="both",expand=True)
 pump_messages()
 
 root.mainloop()
-
-
